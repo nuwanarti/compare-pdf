@@ -150,7 +150,7 @@ public class ImageDiff implements CustomCallback {
      * @throws IOException
      */
     public static void callPythonTodifferentiateImages(String image1, String image2) throws IOException {
-        String command = "python3 app.py " + image1 + " " + image2;
+        String command = "python3 image_diff.py --first " + image1 + " --second " + image2;
         Process proc = Runtime.getRuntime().exec(command);
         // Read the output
         BufferedReader reader
