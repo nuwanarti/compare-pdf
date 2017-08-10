@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.List;
@@ -43,7 +44,7 @@ import org.jsoup.select.Elements;
  *
  *
  */
-public class ImageDiff {
+public class ImageDiff implements CustomCallback {
 
     /**
      *
@@ -52,34 +53,82 @@ public class ImageDiff {
      * @param {String} savingDir -> directory to save the image files
      *
      */
+    static ArrayList<Pdf> pdfList = new ArrayList<>();
+
     public static void main(String[] args) {
         try {
-
-            //LOCATION OF THE PDF FILE
-            String fileLoc = "/home/rt/NetBeansProjects/mavenproject1"
-                    + "/masterDOC1.pdf";
-            //SAVING DIRECTORY OF THE IMAGE OF THE PDF FILE
-            String savingDir = "/home/rt/NetBeansProjects/mavenproject1/";
-            Pdf pdf1 = new Pdf(fileLoc, savingDir);
-            fileLoc = "/home/rt/NetBeansProjects/mavenproject1"
-                    + "/duplicateDOC1.pdf";
-            Pdf pdf2 = new Pdf(fileLoc, savingDir);
-
-            String text1 = pdf1.string;
-            String text2 = pdf2.string;
-            String result = "<html><head></head><body><h2>original text (pdf 1)</h2>"
-                    + text1
-                    + "<h2>duplicated text (pdf2)</h2>"
-                    + text2
-                    + "<h1>Corrected Text</h1>"
-                    + getString(text2, text1) + "</body></html>";
-            System.out.println(result);
-            saveHTMLfile(result);
-            callPythonTodifferentiateImages(pdf1.imageUri, pdf2.imageUri);
+            //run the heavy work simultaneously
+            runInBack("/home/rt/NetBeansProjects/mavenproject1"
+                    + "/masterDOC1.pdf",
+                    "/home/rt/NetBeansProjects/mavenproject1/");
+            runInBack("/home/rt/NetBeansProjects/mavenproject1"
+                    + "/duplicateDOC1.pdf",
+                    "/home/rt/NetBeansProjects/mavenproject1/");
 
         } catch (Exception e) {
             System.out.println(e.getMessage());
         }
+    }
+
+    public static void runRest() {
+        Pdf pdf1 = pdfList.get(0);
+        Pdf pdf2 = pdfList.get(1);
+//            fileLoc = "/home/rt/NetBeansProjects/mavenproject1"
+//                    + "/duplicateDOC1.pdf";
+//            Pdf pdf2 = new Pdf(fileLoc, savingDir);
+
+        String text1 = pdf1.string;
+        String text2 = pdf2.string;
+        String result = "<html><head></head><body><h2>original text (pdf 1)</h2>"
+                + text1
+                + "<h2>duplicated text (pdf2)</h2>"
+                + text2
+                + "<h1>Corrected Text</h1>"
+                + getString(text2, text1) + "</body></html>";
+        System.out.println(result);
+        saveHTMLfile(result);
+        try {
+            callPythonTodifferentiateImages(pdf1.imageUri, pdf2.imageUri);
+        } catch (IOException ex) {
+            Logger.getLogger(ImageDiff.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void runInBack(String fileLoc, String savingDir) {
+        class RunInBack implements Runnable {
+
+            Pdf pdf;
+            String fileLoc;
+            String savingDir;
+            CustomCallback c = new ImageDiff();
+
+            public RunInBack(String fileLoc, String savingDir) {
+                this.pdf = pdf;
+                this.fileLoc = fileLoc;
+                this.savingDir = savingDir;
+            }
+
+            @Override
+            public void run() {
+                try {
+                    pdf = new Pdf(fileLoc, savingDir);
+                } catch (IOException ex) {
+                    Logger.getLogger(ImageDiff.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (ParserConfigurationException ex) {
+                    Logger.getLogger(ImageDiff.class.getName()).log(Level.SEVERE, null, ex);
+                }
+                    c.returnPdf(pdf);
+            }
+
+            public Pdf returnPdf() {
+                return pdf;
+            }
+
+        }
+        RunInBack r = new RunInBack(fileLoc, savingDir);
+        Thread t = new Thread(r);
+        t.start();
+
     }
 
     public static void saveHTMLfile(String text) {
@@ -94,10 +143,11 @@ public class ImageDiff {
 
     /**
      * calling python to handle the differences between the images
-     * @param image1 -> name of the first image to be compared 
-     * @param image2 -> name of the second image to be compared if the images are 
-     *      in the same directory
-     * @throws IOException 
+     *
+     * @param image1 -> name of the first image to be compared
+     * @param image2 -> name of the second image to be compared if the images
+     * are in the same directory
+     * @throws IOException
      */
     public static void callPythonTodifferentiateImages(String image1, String image2) throws IOException {
         String command = "python3 app.py " + image1 + " " + image2;
@@ -119,8 +169,9 @@ public class ImageDiff {
     }
 
     /**
-     * if text has been INSERTED then inserted fraction will be red color
-     * if text has been DELETED then deleted fraction will be blue
+     * if text has been INSERTED then inserted fraction will be red color if
+     * text has been DELETED then deleted fraction will be blue
+     *
      * @param s1 -> string of the first pdf
      * @param s2 -> string of the second pdf
      * @return result HTML string
@@ -142,6 +193,15 @@ public class ImageDiff {
         return fullText;
     }
 
+    @Override
+    public void returnPdf(Pdf pdf) {
+        pdfList.add(pdf);
+        if(pdfList.size() == 2)
+            runRest();
+//        else
+//            System.out.println("size of the list is : "+ pdfList.size());
+    }
+
     public static class Pdf {
 
         private String pdf;
@@ -153,12 +213,14 @@ public class ImageDiff {
             extractDetails(fileLoc, savingDir);
 
         }
+
         /**
          * extracting text and image from the pdf file
+         *
          * @param fileLoc -> location of the pdf file
          * @param savingDir -> destination directory
          * @throws IOException
-         * @throws ParserConfigurationException 
+         * @throws ParserConfigurationException
          */
         public void extractDetails(String fileLoc, String savingDir) throws IOException, ParserConfigurationException {
             PDDocument pdf = PDDocument.load(new java.io.File(fileLoc));
@@ -182,9 +244,10 @@ public class ImageDiff {
 
         /**
          * save the html as image file
+         *
          * @param html
          * @param path
-         * @throws IOException 
+         * @throws IOException
          */
         public void saveImage(String html, String path) throws IOException {
             HtmlImageGenerator imageGenerator = new HtmlImageGenerator();
@@ -203,14 +266,17 @@ public class ImageDiff {
             this.imageUri = f.getAbsolutePath();
 
         }
+
         /**
-         * convert pdf file into an image , save the image , assign the name 
-         *      of the image into imageUri variable 
-         * @supports currently supports for one page pdf 
-         * @todo implement to handle multiple pages just to make imageUri to an array
+         * convert pdf file into an image , save the image , assign the name of
+         * the image into imageUri variable
+         *
+         * @supports currently supports for one page pdf
+         * @todo implement to handle multiple pages just to make imageUri to an
+         * array
          * @param sourceDir -> uri of the pdf file
          * @param destinationDir -> destination directory
-         * @throws IOException 
+         * @throws IOException
          */
         public void extractImage(String sourceDir, String destinationDir) throws
                 IOException {
